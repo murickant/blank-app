@@ -1,0 +1,111 @@
+import streamlit as st
+import requests
+import json
+import openai
+
+# --- Configuration ---
+# Replace these with your actual credentials.
+PARSEHUB_API_KEY = 'tuaDZRt5fXyO'
+PROJECT_TOKEN = 'txO8tCKGBXTA'
+OPENAI_API_KEY = "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"
+
+# Set the OpenAI API key
+openai.api_key = OPENAI_API_KEY
+
+# --- Session State ---
+# Use Streamlit's session_state to store the ParseHub data
+if 'parsehub_data' not in st.session_state:
+    st.session_state.parsehub_data = None
+
+# --- Functions ---
+
+def fetch_parsehub_data():
+    """
+    Retrieves data from the ParseHub API, saves it to a JSON file,
+    and returns the JSON data.
+    """
+    url = f'https://parsehub.com/api/v2/projects/{PROJECT_TOKEN}/last_ready_run/data'
+    params = {'api_key': PARSEHUB_API_KEY, 'format': 'json'}
+    
+    try:
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            st.session_state.parsehub_data = data  # Save in session state
+            
+            # Optionally save data to a file
+            with open('parsehub_data.json', 'w') as file:
+                json.dump(data, file, indent=2)
+                
+            return data
+        else:
+            st.error(f"Error retrieving data: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching data:\n{e}")
+        return None
+
+def summarize_data():
+    """
+    Uses the stored ParseHub data to build a prompt, calls the ChatGPT API,
+    and returns the assistant's reply.
+    """
+    if not st.session_state.parsehub_data:
+        st.warning("Please fetch ParseHub data first.")
+        return None
+
+    # Convert the JSON data to a formatted string
+    data_str = json.dumps(st.session_state.parsehub_data, indent=2)
+    
+    # Optionally truncate the data to avoid hitting token limits
+    max_length = 2000  # Adjust this value as needed
+    if len(data_str) > max_length:
+        data_str = data_str[:max_length] + "\n... (truncated)"
+    
+    # Build the prompt that includes the data and a specific user query
+    prompt = (
+        "Please analyze the following data from ParseHub and provide a summary of the key insights:\n\n" +
+        data_str
+    )
+    
+    user_question = (
+        "Can you summarize the ParseHub data into a table that shows age, kdpi, cold ischemia time, and urine output?"
+    )
+    
+    try:
+        # Call the ChatCompletion endpoint
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",  # Replace with "gpt-4" or "gpt-3.5-turbo" as needed
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_question}
+            ],
+            max_tokens=150,
+            temperature=0.7
+        )
+        
+        assistant_reply = response.choices[0].message.content
+        return assistant_reply
+    except Exception as e:
+        st.error(f"Error communicating with OpenAI API:\n{e}")
+        return None
+
+# --- Streamlit UI ---
+
+st.title("ParseHub & ChatGPT Interface (Streamlit)")
+
+# Button to fetch ParseHub data
+if st.button("Fetch ParseHub Data"):
+    data = fetch_parsehub_data()
+    if data:
+        st.success("Data retrieved successfully!")
+        st.write("**Data retrieved from ParseHub:**")
+        st.json(data)
+
+# Button to summarize data using ChatGPT
+if st.button("Summarize Data"):
+    summary = summarize_data()
+    if summary:
+        st.success("Summary generated!")
+        st.write("**Assistant Reply:**")
+        st.write(summary)
